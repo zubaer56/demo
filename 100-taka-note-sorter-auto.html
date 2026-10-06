@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>100৳ Note Sorter — auto-detect</title>
+<style>
+  :root{
+    --ink:#1b1a17;
+    --panel:#242219;
+    --panel-2:#2b2920;
+    --line:#3a382c;
+    --paper:#eae2d0;
+    --paper-2:#ded4bd;
+    --text:#ece7da;
+    --text-muted:#a39c8a;
+    --green:#5c7a4a;
+    --green-light:#8ba872;
+    --amber:#c08a3e;
+    --rust:#b4622f;
+    --red:#9c3b2c;
+    --radius:8px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    min-height:100vh;
+  }
+  .app{max-width:1080px;margin:0 auto;padding:28px 20px 60px;}
+
+  header{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    flex-wrap:wrap;gap:16px;
+    border-bottom:1px solid var(--line);
+    padding-bottom:18px;margin-bottom:24px;
+  }
+  h1{
+    font-family:Georgia,"Iowan Old Style","Times New Roman",serif;
+    font-weight:700;font-size:26px;margin:0 0 4px;
+    letter-spacing:0.2px;
+  }
+  h1 span{color:var(--green-light);}
+  header p{margin:0;color:var(--text-muted);font-size:13.5px;max-width:48ch;}
+
+  .file-controls{display:flex;gap:10px;flex-wrap:wrap;}
+  button{
+    font-family:inherit;font-size:13.5px;cursor:pointer;
+    border-radius:6px;border:1px solid var(--line);
+    background:var(--panel-2);color:var(--text);
+    padding:9px 14px;
+    transition:border-color .12s ease, background .12s ease;
+  }
+  button:hover{border-color:#54503f;background:#312e22;}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  button.primary{background:var(--green);border-color:var(--green);color:#f4f7f1;}
+  button.primary:hover{background:#6c8c58;}
+  input[type=file]{display:none;}
+
+  .panel-block{
+    border:1px dashed var(--line);border-radius:var(--radius);
+    padding:44px 24px;text-align:center;color:var(--text-muted);
+  }
+  .panel-block p{margin:0 0 18px;font-size:14px;}
+  .panel-block .file-controls{justify-content:center;}
+  .panel-block .fineprint{font-size:12px;max-width:52ch;margin:0 auto 18px;line-height:1.6;}
+
+  .empty{display:block;}
+  .mode-choice, .auto-progress, .auto-unavailable{display:none;}
+
+  .progress-track{height:4px;background:var(--panel-2);border-radius:2px;overflow:hidden;margin:16px 0;max-width:420px;margin-left:auto;margin-right:auto;}
+  .progress-fill{height:100%;background:var(--green-light);width:0%;transition:width .15s ease;}
+
+  .workspace{display:none;grid-template-columns:1fr 280px;gap:22px;}
+  .workspace.active{display:grid;}
+  @media (max-width:760px){ .workspace{grid-template-columns:1fr;} }
+
+  .stage{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;}
+
+  .meta-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;gap:12px;}
+  .meta-row .filename{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .meta-row .right{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .meta-row .count{font-size:12.5px;color:var(--text-muted);}
+  .tag{font-size:11px;padding:2px 8px;border-radius:20px;white-space:nowrap;}
+  .tag.ai{background:#33422b;color:var(--green-light);}
+  .tag.manual{background:#3a3624;color:var(--amber);}
+  .tag.pending{background:transparent;color:var(--text-muted);border:1px solid var(--line);}
+
+  .ai-note{font-size:12px;color:var(--text-muted);font-style:italic;margin:0 0 10px;min-height:16px;}
+
+  .viewer{
+    background:var(--paper);border-radius:6px;
+    height:min(52vh,440px);
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;position:relative;cursor:zoom-in;
+    border:1px solid var(--paper-2);
+  }
+  .viewer.zoomed{overflow:auto;cursor:zoom-out;align-items:flex-start;justify-content:flex-start;}
+  .viewer img{max-width:100%;max-height:100%;object-fit:contain;display:block;}
+  .viewer.zoomed img{max-width:none;max-height:none;width:auto;height:auto;transform:scale(1.8);transform-origin:top left;}
+  .viewer .hint{position:absolute;bottom:8px;right:10px;font-size:11px;color:#6b6350;background:rgba(234,226,208,.85);padding:2px 7px;border-radius:4px;pointer-events:none;}
+
+  .nav-row{display:flex;justify-content:space-between;margin-top:12px;}
+
+  .cats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px;}
+  @media (max-width:480px){ .cats{grid-template-columns:1fr;} }
+  .cat-btn{
+    text-align:left;padding:10px 12px;border-radius:0;
+    border:1px solid var(--line);border-left-width:4px;
+    background:var(--panel-2);
+    display:flex;flex-direction:column;gap:3px;
+  }
+  .cat-btn .top{display:flex;align-items:center;justify-content:space-between;}
+  .cat-btn .label{font-size:13.5px;font-weight:600;}
+  .cat-btn .key{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:var(--text-muted);border:1px solid var(--line);border-radius:4px;padding:1px 6px;}
+  .cat-btn .desc{font-size:11.5px;color:var(--text-muted);line-height:1.4;}
+  .cat-btn[data-cat="fresh"]{border-left-color:var(--green-light);}
+  .cat-btn[data-cat="moderate"]{border-left-color:var(--amber);}
+  .cat-btn[data-cat="torn"]{border-left-color:var(--rust);}
+  .cat-btn[data-cat="damaged"]{border-left-color:var(--red);}
+  .cat-btn.selected{background:#33311f;}
+
+  aside{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;height:fit-content;}
+  aside h2{font-size:14px;margin:0 0 14px;font-weight:600;}
+  .ledger-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:7px 0;border-bottom:1px solid var(--line);}
+  .ledger-row:last-of-type{border-bottom:none;}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:8px;}
+  .dot.fresh{background:var(--green-light);}
+  .dot.moderate{background:var(--amber);}
+  .dot.torn{background:var(--rust);}
+  .dot.damaged{background:var(--red);}
+  .dot.unsorted{background:var(--text-muted);}
+  .ledger-total{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:13px;color:var(--text-muted);}
+  .ledger-sub{font-size:11px;color:var(--text-muted);margin-top:4px;}
+
+  .keys{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--text-muted);line-height:2;}
+  .keys kbd{font-family:ui-monospace,monospace;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:0 6px;margin-right:6px;}
+
+  .export-note{font-size:11.5px;color:var(--text-muted);margin-top:10px;line-height:1.5;}
+  #exportBtn{width:100%;margin-top:14px;}
+  #resumeBtn{width:100%;margin-top:8px;}
+  #resetBtn{width:100%;margin-top:8px;}
+  .status{font-size:12px;color:var(--green-light);margin-top:8px;min-height:16px;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div>
+      <h1>100<span>৳</span> note sorter <span style="color:var(--text-muted);font-size:15px;">— auto-detect</span></h1>
+      <p>Loads your images, asks Claude for a first-pass condition read on each one, then hands you a fast keyboard review to confirm or fix any of them.</p>
+    </div>
+    <div class="file-controls" id="headerControls" style="display:none;">
+      <button id="loadMoreBtn">Add more images</button>
+      <button id="resetTopBtn">Start over</button>
+    </div>
+  </header>
+
+  <div class="panel-block empty" id="emptyState">
+    <p>Select the folder or images you want to sort.</p>
+    <div class="file-controls">
+      <button class="primary" id="pickFolderBtn">Choose a folder</button>
+      <button id="pickFilesBtn">Choose images</button>
+    </div>
+  </div>
+  <input type="file" id="folderInput" webkitdirectory multiple>
+  <input type="file" id="filesInput" accept="image/*" multiple>
+
+  <div class="panel-block mode-choice" id="modeChoice">
+    <p><span id="loadedCount">0</span> images loaded.</p>
+    <div class="file-controls">
+      <button class="primary" id="autoBtn">Auto-classify with AI</button>
+      <button id="manualBtn">Sort manually instead</button>
+    </div>
+    <p class="fineprint">Auto-classify sends a resized copy of each note to Claude and asks for a condition read. It's a strong first pass, not a verdict — skim the results afterward, especially anything borderline, before exporting.</p>
+  </div>
+
+  <div class="panel-block auto-progress" id="autoProgress">
+    <p id="autoProgressText">Classifying 0 / 0…</p>
+    <div class="progress-track"><div class="progress-fill" id="autoProgressFill"></div></div>
+    <div class="file-controls"><button id="cancelAutoBtn">Stop and review what's done</button></div>
+  </div>
+
+  <div class="panel-block auto-unavailable" id="autoUnavailable">
+    <p class="fineprint">Couldn't reach the AI classifier from here — that feature needs to run inside a live Claude conversation panel, not a plain downloaded file. No problem, sort manually below with the same fast keyboard flow.</p>
+    <div class="file-controls"><button class="primary" id="fallbackManualBtn">Sort manually</button></div>
+  </div>
+
+  <div class="workspace" id="workspace">
+    <div class="stage">
+      <div class="meta-row">
+        <span class="filename" id="filename">—</span>
+        <span class="right">
+          <span class="tag pending" id="sourceTag">—</span>
+          <span class="count" id="counter">0 / 0</span>
+        </span>
+      </div>
+      <div class="ai-note" id="aiNote"></div>
+      <div class="viewer" id="viewer">
+        <img id="preview" alt="Current banknote image">
+        <span class="hint">Click to zoom</span>
+      </div>
+      <div class="nav-row">
+        <button id="backBtn">← Back</button>
+        <button id="skipBtn">Skip →</button>
+      </div>
+      <div class="cats" id="cats">
+        <button class="cat-btn" data-cat="fresh">
+          <div class="top"><span class="label">Fresh</span><span class="key">1</span></div>
+          <span class="desc">Crisp, sharp corners, minimal handling wear</span>
+        </button>
+        <button class="cat-btn" data-cat="moderate">
+          <div class="top"><span class="label">Moderately used</span><span class="key">2</span></div>
+          <span class="desc">Folded, soiled or softened, but intact</span>
+        </button>
+        <button class="cat-btn" data-cat="torn">
+          <div class="top"><span class="label">Torn / taped</span><span class="key">3</span></div>
+          <span class="desc">Visible tears, splits, or tape repairs</span>
+        </button>
+        <button class="cat-btn" data-cat="damaged">
+          <div class="top"><span class="label">Damaged</span><span class="key">4</span></div>
+          <span class="desc">Heavy wear, missing pieces, stains, writing</span>
+        </button>
+      </div>
+    </div>
+
+    <aside>
+      <h2>Tally</h2>
+      <div class="ledger-row"><span><span class="dot fresh"></span>Fresh</span><span id="cnt-fresh">0</span></div>
+      <div class="ledger-row"><span><span class="dot moderate"></span>Moderately used</span><span id="cnt-moderate">0</span></div>
+      <div class="ledger-row"><span><span class="dot torn"></span>Torn / taped</span><span id="cnt-torn">0</span></div>
+      <div class="ledger-row"><span><span class="dot damaged"></span>Damaged</span><span id="cnt-damaged">0</span></div>
+      <div class="ledger-row"><span><span class="dot unsorted"></span>Unsorted</span><span id="cnt-unsorted">0</span></div>
+      <div class="ledger-total" id="ledgerTotal">0 of 0 sorted</div>
+      <div class="ledger-sub" id="ledgerSub"></div>
+
+      <button id="resumeBtn" style="display:none;">Auto-classify remaining</button>
+      <button class="primary" id="exportBtn" disabled>Export as ZIP</button>
+      <button id="resetBtn">Start over</button>
+      <div class="status" id="status"></div>
+      <div class="export-note">Export creates four folders plus a manifest.csv listing every filename, its category, and whether the AI or you made the final call.</div>
+
+      <div class="keys">
+        <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> classify</div>
+        <div><kbd>←</kbd> back &nbsp; <kbd>→</kbd> skip</div>
+        <div>click image to zoom</div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(function(){
+  var CATS = ["fresh","moderate","torn","damaged"];
+  var FOLDER_NAMES = {fresh:"fresh", moderate:"moderately_used", torn:"torn_taped", damaged:"damaged", unsorted:"unsorted"};
+  var CAT_LABELS = {fresh:"Fresh", moderate:"Moderately used", torn:"Torn / taped", damaged:"Damaged"};
+
+  var SYSTEM_PROMPT = "You are assessing the physical condition of a Bangladeshi taka banknote from a photograph, purely to help sort a stack of notes (not to authenticate or value them). Classify the note into exactly one of these four categories:\n" +
+    "- fresh: crisp, sharp corners, flat, minimal handling wear, no folds, stains, or tears\n" +
+    "- moderate: visibly folded, soiled, or softened, but structurally intact with no tears\n" +
+    "- torn: has tears, splits, or tape repairs joining torn sections\n" +
+    "- damaged: heavy wear, missing or torn-away material, heavy staining or writing, or otherwise structurally compromised beyond a simple tear\n\n" +
+    "Respond with ONLY a JSON object, no markdown fences, no extra words, in exactly this form: {\"category\":\"fresh\",\"note\":\"under 8 words on the visual cues\"} (category must be one of fresh, moderate, torn, damaged).";
+
+  var images = [];
+  var current = 0;
+  var cancelled = false;
+  var autoRunning = false;
+
+  var emptyState = document.getElementById("emptyState");
+  var modeChoice = document.getElementById("modeChoice");
+  var autoProgress = document.getElementById("autoProgress");
+  var autoUnavailable = document.getElementById("autoUnavailable");
+  var workspace = document.getElementById("workspace");
+  var headerControls = document.getElementById("headerControls");
+  var folderInput = document.getElementById("folderInput");
+  var filesInput = document.getElementById("filesInput");
+  var previewImg = document.getElementById("preview");
+  var viewer = document.getElementById("viewer");
+  var filenameEl = document.getElementById("filename");
+  var counterEl = document.getElementById("counter");
+  var sourceTag = document.getElementById("sourceTag");
+  var aiNoteEl = document.getElementById("aiNote");
+  var statusEl = document.getElementById("status");
+  var exportBtn = document.getElementById("exportBtn");
+  var resumeBtn = document.getElementById("resumeBtn");
+
+  function showOnly(el){
+    [emptyState, modeChoice, autoProgress, autoUnavailable].forEach(function(x){ x.style.display = (x === el) ? "block" : "none"; });
+    workspace.classList.toggle("active", el === workspace);
+  }
+
+  document.getElementById("pickFolderBtn").addEventListener("click", function(){ folderInput.click(); });
+  document.getElementById("pickFilesBtn").addEventListener("click", function(){ filesInput.click(); });
+  document.getElementById("loadMoreBtn").addEventListener("click", function(){ filesInput.click(); });
+  folderInput.addEventListener("change", function(e){ handleFiles(e.target.files); });
+  filesInput.addEventListener("change", function(e){ handleFiles(e.target.files); });
+  document.getElementById("resetBtn").addEventListener("click", resetAll);
+  document.getElementById("resetTopBtn").addEventListener("click", resetAll);
+  document.getElementById("autoBtn").addEventListener("click", function(){ runAutoClassify(); });
+  document.getElementById("manualBtn").addEventListener("click", function(){ showOnly(workspace); render(); });
+  document.getElementById("fallbackManualBtn").addEventListener("click", function(){ showOnly(workspace); render(); });
+  document.getElementById("cancelAutoBtn").addEventListener("click", function(){ cancelled = true; });
+  resumeBtn.addEventListener("click", function(){ runAutoClassify(); });
+
+  document.getElementById("backBtn").addEventListener("click", function(){
+    if(current > 0){ current--; render(); }
+  });
+  document.getElementById("skipBtn").addEventListener("click", function(){
+    if(current < images.length - 1){ current++; render(); }
+  });
+  document.getElementById("cats").addEventListener("click", function(e){
+    var btn = e.target.closest(".cat-btn");
+    if(btn){ classify(btn.getAttribute("data-cat")); }
+  });
+  viewer.addEventListener("click", function(){
+    viewer.classList.toggle("zoomed");
+  });
+  document.addEventListener("keydown", function(e){
+    if(!workspace.classList.contains("active")) return;
+    if(images.length === 0) return;
+    if(e.key === "1") classify("fresh");
+    else if(e.key === "2") classify("moderate");
+    else if(e.key === "3") classify("torn");
+    else if(e.key === "4") classify("damaged");
+    else if(e.key === "ArrowLeft"){ if(current > 0){ current--; render(); } }
+    else if(e.key === "ArrowRight"){ if(current < images.length - 1){ current++; render(); } }
+  });
+  exportBtn.addEventListener("click", exportZip);
+
+  function handleFiles(fileList){
+    var added = 0;
+    for(var i=0;i<fileList.length;i++){
+      var f = fileList[i];
+      if(f.type && f.type.indexOf("image/") === 0){
+        images.push({file:f, url:URL.createObjectURL(f), category:null, source:null, note:""});
+        added++;
+      }
+    }
+    if(added === 0) return;
+    images.sort(function(a,b){ return a.file.name.localeCompare(b.file.name, undefined, {numeric:true}); });
+    headerControls.style.display = "flex";
+    document.getElementById("loadedCount").textContent = images.length;
+    showOnly(modeChoice);
+  }
+
+  function loadImageEl(url){
+    return new Promise(function(resolve, reject){
+      var im = new Image();
+      im.onload = function(){ resolve(im); };
+      im.onerror = reject;
+      im.src = url;
+    });
+  }
+
+  function toResizedBase64(url){
+    return loadImageEl(url).then(function(im){
+      var maxDim = 900;
+      var w = im.naturalWidth, h = im.naturalHeight;
+      var scale = Math.min(1, maxDim / Math.max(w, h));
+      w = Math.round(w * scale); h = Math.round(h * scale);
+      var canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      var ctx = canvas.getContext("2d");
+      ctx.drawImage(im, 0, 0, w, h);
+      var dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+      return dataUrl.split(",")[1];
+    });
+  }
+
+  function classifyOne(img){
+    return toResizedBase64(img.url).then(function(base64){
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function(){ controller.abort(); }, 30000);
+      return fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1000,
+          system: SYSTEM_PROMPT,
+          messages: [{
+            role: "user",
+            content: [
+              {type: "image", source: {type: "base64", media_type: "image/jpeg", data: base64}},
+              {type: "text", text: "Classify this banknote's condition."}
+            ]
+          }]
+        })
+      }).then(function(resp){
+        clearTimeout(timeoutId);
+        if(!resp.ok) throw new Error("HTTP " + resp.status);
+        return resp.json();
+      }).then(function(data){
+        var textBlock = null;
+        var content = data.content || [];
+        for(var i=0;i<content.length;i++){ if(content[i].type === "text"){ textBlock = content[i]; break; } }
+        if(!textBlock) throw new Error("no text block");
+        var clean = textBlock.text.replace(/```json|```/g, "").trim();
+        var parsed = JSON.parse(clean);
+        if(CATS.indexOf(parsed.category) === -1) throw new Error("bad category");
+        return parsed;
+      });
+    });
+  }
+
+  function runAutoClassify(){
+    if(autoRunning) return;
+    var targets = [];
+    for(var i=0;i<images.length;i++){ if(!images[i].category) targets.push(i); }
+    if(targets.length === 0){ showOnly(workspace); render(); return; }
+
+    autoRunning = true;
+    cancelled = false;
+    showOnly(autoProgress);
+    var total = targets.length;
+    var doneCount = 0;
+    updateAutoProgress(0, total);
+
+    var firstIdx = targets[0];
+    classifyOne(images[firstIdx]).then(function(result){
+      images[firstIdx].category = result.category;
+      images[firstIdx].source = "ai";
+      images[firstIdx].note = result.note || "";
+      doneCount = 1;
+      updateAutoProgress(doneCount, total);
+
+      var remaining = targets.slice(1);
+      var ptr = 0;
+      var concurrency = 4;
+
+      function worker(){
+        return classifyNext();
+        function classifyNext(){
+          if(cancelled || ptr >= remaining.length) return Promise.resolve();
+          var idx = remaining[ptr++];
+          return classifyOne(images[idx]).then(function(res){
+            images[idx].category = res.category;
+            images[idx].source = "ai";
+            images[idx].note = res.note || "";
+          }).catch(function(){
+            images[idx].source = "error";
+            images[idx].note = "auto-classify failed";
+          }).then(function(){
+            doneCount++;
+            updateAutoProgress(doneCount, total);
+            return classifyNext();
+          });
+        }
+      }
+
+      var workers = [];
+      for(var w=0; w<concurrency; w++) workers.push(worker());
+      return Promise.all(workers);
+    }).catch(function(){
+      autoRunning = false;
+      showOnly(autoUnavailable);
+    }).then(function(){
+      if(autoRunning){
+        autoRunning = false;
+        showOnly(workspace);
+        render();
+      }
+    });
+  }
+
+  function updateAutoProgress(done, total){
+    document.getElementById("autoProgressText").textContent = "Classifying " + done + " / " + total + "\u2026";
+    document.getElementById("autoProgressFill").style.width = (total ? (done/total*100) : 0) + "%";
+  }
+
+  function classify(cat){
+    if(images.length === 0) return;
+    images[current].category = cat;
+    images[current].source = "manual";
+    render();
+  }
+
+  function render(){
+    if(images.length === 0) return;
+    var img = images[current];
+    previewImg.src = img.url;
+    filenameEl.textContent = img.file.name;
+    counterEl.textContent = (current + 1) + " / " + images.length;
+    viewer.classList.remove("zoomed");
+
+    if(img.source === "ai"){
+      sourceTag.textContent = "AI suggested";
+      sourceTag.className = "tag ai";
+      aiNoteEl.textContent = img.note ? ("AI: " + img.note) : "";
+    } else if(img.source === "manual"){
+      sourceTag.textContent = "You set this";
+      sourceTag.className = "tag manual";
+      aiNoteEl.textContent = "";
+    } else if(img.source === "error"){
+      sourceTag.textContent = "Needs review";
+      sourceTag.className = "tag pending";
+      aiNoteEl.textContent = "AI couldn't classify this one — set it manually.";
+    } else {
+      sourceTag.textContent = "Unsorted";
+      sourceTag.className = "tag pending";
+      aiNoteEl.textContent = "";
+    }
+
+    var btns = document.querySelectorAll(".cat-btn");
+    for(var i=0;i<btns.length;i++){
+      btns[i].classList.toggle("selected", btns[i].getAttribute("data-cat") === img.category);
+    }
+    updateLedger();
+  }
+
+  function updateLedger(){
+    var counts = {fresh:0, moderate:0, torn:0, damaged:0, unsorted:0};
+    var aiCount = 0, manualCount = 0, unresolved = 0;
+    for(var i=0;i<images.length;i++){
+      var c = images[i].category || "unsorted";
+      counts[c]++;
+      if(images[i].source === "ai") aiCount++;
+      else if(images[i].source === "manual") manualCount++;
+      if(!images[i].category) unresolved++;
+    }
+    document.getElementById("cnt-fresh").textContent = counts.fresh;
+    document.getElementById("cnt-moderate").textContent = counts.moderate;
+    document.getElementById("cnt-torn").textContent = counts.torn;
+    document.getElementById("cnt-damaged").textContent = counts.damaged;
+    document.getElementById("cnt-unsorted").textContent = counts.unsorted;
+    var sorted = images.length - counts.unsorted;
+    document.getElementById("ledgerTotal").textContent = sorted + " of " + images.length + " sorted";
+    document.getElementById("ledgerSub").textContent = aiCount + " AI-suggested \u00b7 " + manualCount + " you confirmed";
+    exportBtn.disabled = images.length === 0;
+    resumeBtn.style.display = unresolved > 0 ? "block" : "none";
+    if(unresolved > 0) resumeBtn.textContent = "Auto-classify remaining (" + unresolved + ")";
+  }
+
+  function resetAll(){
+    if(images.length > 0 && !confirm("This clears your current sorting progress. Continue?")) return;
+    for(var i=0;i<images.length;i++){ URL.revokeObjectURL(images[i].url); }
+    images = [];
+    current = 0;
+    cancelled = true;
+    autoRunning = false;
+    folderInput.value = "";
+    filesInput.value = "";
+    headerControls.style.display = "none";
+    statusEl.textContent = "";
+    showOnly(emptyState);
+  }
+
+  function csvField(val){
+    val = String(val == null ? "" : val);
+    if(val.indexOf(",") > -1 || val.indexOf('"') > -1 || val.indexOf("\n") > -1){
+      return '"' + val.replace(/"/g, '""') + '"';
+    }
+    return val;
+  }
+
+  function exportZip(){
+    if(images.length === 0) return;
+    exportBtn.disabled = true;
+    statusEl.textContent = "Packing images\u2026";
+    var zip = new JSZip();
+    var usedNames = {};
+    var rows = ["filename,category,source,note"];
+
+    for(var i=0;i<images.length;i++){
+      var img = images[i];
+      var cat = img.category || "unsorted";
+      var folder = FOLDER_NAMES[cat];
+      var name = img.file.name;
+      var key = folder + "/" + name;
+      if(usedNames[key]){
+        var dot = name.lastIndexOf(".");
+        var base = dot > -1 ? name.slice(0,dot) : name;
+        var ext = dot > -1 ? name.slice(dot) : "";
+        var n = usedNames[key] + 1;
+        name = base + "_" + n + ext;
+        usedNames[key] = n;
+      } else {
+        usedNames[key] = 1;
+      }
+      zip.folder(folder).file(name, img.file);
+      rows.push([csvField(name), csvField(cat), csvField(img.source || "unsorted"), csvField(img.note)].join(","));
+    }
+    zip.file("manifest.csv", rows.join("\n"));
+
+    zip.generateAsync({type:"blob"}, function(metadata){
+      statusEl.textContent = "Packing images\u2026 " + Math.round(metadata.percent) + "%";
+    }).then(function(blob){
+      var a = document.createElement("a");
+      var url = URL.createObjectURL(blob);
+      a.href = url;
+      a.download = "taka_notes_sorted.zip";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+      statusEl.textContent = "Downloaded taka_notes_sorted.zip";
+      exportBtn.disabled = false;
+    }).catch(function(){
+      statusEl.textContent = "Export failed \u2014 try again.";
+      exportBtn.disabled = false;
+    });
+  }
+
+  showOnly(emptyState);
+})();
+</script>
+</body>
+</html>
